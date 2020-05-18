@@ -128,6 +128,57 @@ func TestMask(t *testing.T) {
 	assert.Equal(t, []byte("New data added to data_values= on prod"), redactedMessage)
 }
 
+func TestSqlObfuscation(t *testing.T) {
+	p := &Processor{processingRules: []*config.ProcessingRule{}}
+
+	cases := []struct {
+		caseName string
+		pattern  string
+		input    string
+		expected string
+	}{
+		{
+			"query obfuscation no signature",
+			".*STATEMENT: (?P<query>.*)",
+			"other PG fields... STATEMENT: select * from table where id = 1",
+			"other PG fields... STATEMENT: select * from table where id = ?",
+		},
+		{
+			"query obfuscation with signature",
+			".*(?P<sig_insert>STATEMENT): (?P<query>.*)",
+			"other PG fields... STATEMENT: select * from table where id = 1",
+			"other PG fields...  e50530a375013f61 STATEMENT: select * from table where id = ?",
+		},
+		{
+			"query signature no obfuscation",
+			".*(?P<sig_insert>STATEMENT): (?P<query_raw>.*)",
+			"other PG fields... STATEMENT: select * from table where id = 1",
+			"other PG fields...  e50530a375013f61 STATEMENT: select * from table where id = 1",
+		},
+		{
+			"invalid statement is ignored",
+			".*(?P<sig_insert>STATEMENT): (?P<query>.*)",
+			"other PG fields... STATEMENT: !@",
+			"other PG fields... STATEMENT: !@",
+		},
+		{
+			"pg execution plan parse and signature insert",
+			`.*(?P<sig_insert>plan):\s+(?P<auto_explain_json>.*)`,
+			`other PG fields... plan: {"Query Text": "select * from table where id = 1", "Plan": {"Node Type": "Nested Loop"}}`,
+			`other PG fields...  e50530a375013f61 plan: {"Query Text": "select * from table where id = 1", "Plan": {"Node Type": "Nested Loop"}}`,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.caseName, func(t *testing.T) {
+			source := newSource("obfuscate_sql", "", c.pattern)
+			shouldProcess, result := p.applyRedactingRules(newMessage([]byte(c.input), &source, ""))
+			assert.True(t, shouldProcess)
+			assert.Equal(t, c.expected, string(result))
+		})
+	}
+}
+
 func TestTruncate(t *testing.T) {
 	p := &Processor{}
 

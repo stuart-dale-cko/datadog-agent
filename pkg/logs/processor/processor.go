@@ -6,6 +6,11 @@
 package processor
 
 import (
+	"encoding/json"
+	"fmt"
+	"regexp"
+
+	"github.com/DataDog/datadog-agent/pkg/trace/obfuscate"
 	"github.com/DataDog/datadog-agent/pkg/util/log"
 
 	"github.com/DataDog/datadog-agent/pkg/logs/config"
@@ -70,6 +75,75 @@ func (p *Processor) run() {
 	}
 }
 
+var obfuscator = obfuscate.NewObfuscator(nil)
+
+type submatchGroup struct {
+	name  string
+	start int
+	end   int
+}
+
+func submatchGroups(r *regexp.Regexp, content []byte) []submatchGroup {
+	// first group is always empty
+	groups := r.SubexpNames()[1:]
+	submatches := r.FindSubmatchIndex(content)
+	result := make([]submatchGroup, len(groups), len(groups))
+	for i, g := range groups {
+		si := 2 + i*2
+		result[i] = submatchGroup{name: g, start: submatches[si], end: submatches[si+1]}
+	}
+	return result
+}
+
+type pgAutoExplain struct {
+	// postgres original query text if logged from auto_explain
+	QueryText string `json:"Query Text"`
+}
+
+func applyObfuscateSqlRule(r *regexp.Regexp, content []byte) (result []byte, err error) {
+	groups := submatchGroups(r, content)
+	rawQuery := ""
+	for _, g := range groups {
+		switch g.name {
+		case "query", "query_raw":
+			rawQuery = string(content[g.start:g.end])
+		case "auto_explain_json":
+			var plan pgAutoExplain
+			if err := json.Unmarshal(content[g.start:g.end], &plan); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal json execution plan='%s' error='%s'", content[g.start:g.end], err)
+			}
+			if plan.QueryText != "" {
+				rawQuery = plan.QueryText
+			}
+		}
+	}
+	if rawQuery == "" {
+		return
+	}
+	obfQuery, err := obfuscator.ObfuscateSQLString(rawQuery)
+	if err != nil {
+		return nil, fmt.Errorf("failed to obfuscate sql query='%s' error='%s'", rawQuery, err)
+	}
+	ci := 0
+	for _, g := range groups {
+		result = append(result, content[ci:g.start]...)
+		ci = g.start
+		if g.name == "query" {
+			result = append(result, []byte(obfQuery.Query)...)
+			ci = g.end
+		} else if g.name == "query_raw" {
+			result = append(result, content[g.start:g.end]...)
+			ci = g.end
+		} else if g.name == "sig_insert" {
+			result = append(result, []byte(fmt.Sprintf(" %s ", obfuscate.HashObfuscatedSql(rawQuery)))...)
+		}
+	}
+	if ci < len(content) {
+		result = append(result, content[ci:]...)
+	}
+	return result, nil
+}
+
 // applyRedactingRules returns given a message if we should process it or not,
 // and a copy of the message with some fields redacted, depending on config
 func (p *Processor) applyRedactingRules(msg *message.Message) (bool, []byte) {
@@ -87,6 +161,13 @@ func (p *Processor) applyRedactingRules(msg *message.Message) (bool, []byte) {
 			}
 		case config.MaskSequences:
 			content = rule.Regex.ReplaceAll(content, rule.Placeholder)
+		case config.ObfuscateSql:
+			c, err := applyObfuscateSqlRule(rule.Regex, content)
+			if err != nil {
+				log.Errorf("failed to obfuscate sql query='%s', error: %s", content, err)
+			} else if len(c) > 0 {
+				content = c
+			}
 		}
 	}
 	return true, content
