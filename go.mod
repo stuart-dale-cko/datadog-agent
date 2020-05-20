@@ -148,6 +148,7 @@ require (
 	k8s.io/client-go v11.0.0+incompatible
 	k8s.io/component-base v0.17.3 // indirect
 	k8s.io/cri-api v0.0.0
+	k8s.io/klog v1.0.1-0.20200310124935-4ad0115ba9e4 // indirect
 	k8s.io/kube-state-metrics v1.8.1-0.20200108124505-369470d6ead8
 	k8s.io/kubernetes v1.16.2
 	k8s.io/metrics v0.17.3
