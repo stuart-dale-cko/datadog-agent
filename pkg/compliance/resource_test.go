@@ -12,10 +12,6 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-func intPtr(v int) *int {
-	return &v
-}
-
 const testResourceFileReportingOwner = `
 file:
   path: /etc/docker/daemon.json
@@ -207,7 +203,7 @@ func TestResources(t *testing.T) {
 					Filter: []CommandFilter{
 						{
 							Include: &CommandCondition{
-								ExitCode: intPtr(0),
+								ExitCode: 0,
 							},
 						},
 					},

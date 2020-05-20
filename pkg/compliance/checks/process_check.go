@@ -35,7 +35,7 @@ func newProcessCheck(baseCheck baseCheck, process *compliance.Process) (*process
 }
 
 func (c *processCheck) Run() error {
-	log.Debugf("File check: %s", c.process.Name)
+	log.Debugf("Process check: %s", c.process.Name)
 	processes, err := getProcesses(cacheValidity)
 	if err != nil {
 		return log.Errorf("Unable to fetch processes: %v", err)

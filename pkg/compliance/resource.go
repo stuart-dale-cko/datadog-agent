@@ -47,7 +47,10 @@ type Group struct {
 
 // Command describes a command resource usually reporting exit code or output
 type Command struct {
-	Run string `yaml:"run"`
+	Run            string   `yaml:"run"`
+	ShellCommand   []string `yaml:"shellCommand,omitempty"`
+	TimeoutSeconds int      `yaml:"timeout,omitempty"`
+	MaxOutputSize  int      `yaml:"maxOutputSize,omitempty"`
 
 	// TODO: generalize to use the same filter types
 	Filter []CommandFilter `yaml:"filter,omitempty"`
@@ -141,7 +144,7 @@ type CommandFilter struct {
 
 // CommandCondition specifies conditions to include or exclude a Command from reporting
 type CommandCondition struct {
-	ExitCode *int `yaml:"exitCode,omitempty"`
+	ExitCode int `yaml:"exitCode"`
 }
 
 // Filter specifies filtering options to include or exclude a Docker resource from reporting
